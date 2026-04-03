@@ -2,6 +2,17 @@
 
 This is the implementation of a **RabbitMQ / Microsservices** assignment for our **Distributed Systems** class.
 
+# Running
+The RabbitMQ broker can be deployed by running
+```bash
+docker compose up --build
+```
+on the root of this repository.
+
+Alternatively, you may use your own broker.
+However, the default ports and credentials are expected.
+Furthermore, a virtual host called `promocoes` is also expected.
+
 ## Cryptographic keys 
 
 In this project, we're using RSA keys only,
