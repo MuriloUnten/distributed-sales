@@ -1,17 +1,18 @@
 package main
 
 import (
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/json"
 	"log"
 
+	"github.com/MuriloUnten/distributed-sales/common"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-const (
-	URL = "amqp://guest:guest@localhost:5672/"
-)
-
 func main() {
-	connection, err := amqp.Dial(URL)
+	connection, err := amqp.Dial(common.Url)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,7 +25,7 @@ func main() {
 	defer ch.Close()
 
 	err = ch.ExchangeDeclare(
-		"promocoes",
+		common.ExchangeName,
 		"topic",
 		false,
 		false,
@@ -35,4 +36,97 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	queue, err := ch.QueueDeclare("", false, false, true, false, nil)
+	ch.QueueBind(queue.Name, common.ReceivedKey , common.ExchangeName, false, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	messages, err := ch.Consume(queue.Name, "", true, true, false, false, nil)
+
+	var forever chan struct{}
+
+	go listen(messages)
+
+	log.Printf("Waiting for messages")
+	<-forever
+}
+
+func listen(messages <-chan amqp.Delivery) {
+	// TODO: sign payload with own key
+	key, err := common.LoadPrivateKeyFromFile("./keys/private/private_key.pem")
+	if err != nil {
+		log.Fatal("cannot continue due to failure loading private key: ", err)
+	}
+
+	registeredPubKeys, err := common.LoadPublicKeysFromDirectory("./keys/public")
+	if err != nil {
+		log.Fatal("cannot continue due to failure loading public keys: ", err)
+	}
+
+	connection, err := amqp.Dial(common.Url)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer connection.Close()
+
+	ch, err := connection.Channel()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer ch.Close()
+	for msg := range messages {
+		log.Println("%s", msg.Body)
+		handleMessage(msg.Body, ch, key, registeredPubKeys)
+	}
+}
+
+func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, registeredPubKeys []*rsa.PublicKey) {
+	signedMessage := new(common.SignedMessage)
+	err := json.Unmarshal(msg, signedMessage)
+	if err != nil {
+		// malformed message (just dropping it for now)
+		return
+	}
+
+	sale := new(common.SalePayload)
+	err = json.Unmarshal(signedMessage.Payload, sale)
+	if err != nil {
+		// malformed message (just dropping it for now)
+		return
+	}
+
+	validated := common.ValidateSignature(signedMessage.Signature, signedMessage.Payload, registeredPubKeys)
+	if !validated {
+		// Silently dropping message that failed validation
+		return
+	}
+
+	hashed := sha256.Sum256(signedMessage.Payload)
+	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
+	if err != nil {
+		log.Println("dropping message due to failure signing: ", err)
+	}
+
+	outputMessage := common.SignedMessage{
+		Signature: string(signature),
+		Payload: signedMessage.Payload,
+	}
+
+	outputBytes, err := json.Marshal(outputMessage)
+	if err != nil {
+		log.Println("dropping message due to failure encoding output: ", err)
+	}
+
+	ch.Publish(
+		common.ExchangeName,
+		common.PublishedKey,
+		false,
+		false,
+		amqp.Publishing{
+			Body: outputBytes,
+		},
+	)
 }
