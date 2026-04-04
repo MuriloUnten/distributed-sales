@@ -54,7 +54,6 @@ func main() {
 }
 
 func listen(messages <-chan amqp.Delivery) {
-	// TODO: sign payload with own key
 	key, err := common.LoadPrivateKeyFromFile("./keys/private/private_key.pem")
 	if err != nil {
 		log.Fatal("cannot continue due to failure loading private key: ", err)

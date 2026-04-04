@@ -7,6 +7,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -39,7 +41,6 @@ func LoadPublicKeyFromFile(path string) (*rsa.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(string(bytes))
 
 	block, _ := pem.Decode(bytes)
 	if block == nil || block.Type != "PUBLIC KEY" {
@@ -113,4 +114,16 @@ func getRelativeFilePath(directory string, fileName string) string {
 	}
 	
 	return dirPath + fileName
+}
+
+func ClearTerminal() {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", "cls")
+	} else {
+		cmd = exec.Command("clear")
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Run()
 }
