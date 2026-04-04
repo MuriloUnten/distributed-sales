@@ -11,7 +11,7 @@ on the root of this repository.
 
 Alternatively, you may use your own broker.
 However, the default ports and credentials are expected.
-Furthermore, a virtual host called `promocoes` is also expected.
+Furthermore, a virtual host called `assignment1` is also expected.
 
 ## Cryptographic keys 
 
