@@ -11,7 +11,18 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+var (
+	logger *common.DistributedLogger = nil
+)
+
 func main() {
+	l, err := common.ConnectToLoggingService("gateway")
+	if err != nil {
+		log.Fatal("failed to connect to logging service")
+	}
+	logger = l
+	defer logger.Disconnect()
+
 	connection, err := amqp.Dial(common.Url)
 	if err != nil {
 		log.Fatal(err)
@@ -38,7 +49,11 @@ func main() {
 	}
 
 	queue, err := ch.QueueDeclare("", false, false, true, false, nil)
-	ch.QueueBind(queue.Name, common.ReceivedKey , common.ExchangeName, false, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = ch.QueueBind(queue.Name, common.ReceivedKey , common.ExchangeName, false, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -86,27 +101,28 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 	signedMessage := new(common.SignedMessage)
 	err := json.Unmarshal(msg, signedMessage)
 	if err != nil {
-		// malformed message (just dropping it for now)
+		logger.Error("error decoding signed message: " + err.Error())
 		return
 	}
 
 	sale := new(common.SalePayload)
 	err = json.Unmarshal(signedMessage.Payload, sale)
 	if err != nil {
-		// malformed message (just dropping it for now)
+		logger.Error("error decoding sale message: " + err.Error())
 		return
 	}
 
 	validated := common.ValidateSignature(signedMessage.Signature, signedMessage.Payload, registeredPubKeys)
 	if !validated {
-		// Silently dropping message that failed validation
+		logger.Info("dropping message due to failed validation")
 		return
 	}
 
 	hashed := sha256.Sum256(signedMessage.Payload)
 	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
 	if err != nil {
-		log.Println("dropping message due to failure signing: ", err)
+		logger.Error("dropping message due to failure signing: " + err.Error())
+		return
 	}
 
 	outputMessage := common.SignedMessage{
@@ -116,10 +132,11 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 
 	outputBytes, err := json.Marshal(outputMessage)
 	if err != nil {
-		log.Println("dropping message due to failure encoding output: ", err)
+		logger.Error("dropping message due to failure encoding output: " + err.Error())
+		return
 	}
 
-	ch.Publish(
+	err = ch.Publish(
 		common.ExchangeName,
 		common.PublishedKey,
 		false,
@@ -128,4 +145,8 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 			Body: outputBytes,
 		},
 	)
+	if err != nil {
+		logger.Error("failed to publish sale: " + err.Error())
+		return
+	}
 }
