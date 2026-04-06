@@ -15,3 +15,9 @@ type VoteMessage struct {
 	Name     string `json:"name"`
 	Positive bool   `json:"positive"`
 }
+
+type LogMessage struct {
+	Timestamp string `json:"timestamp"`
+	Sender    string `json:"sender"`
+	Payload   string `json:"payload"`
+}

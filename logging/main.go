@@ -1,10 +1,16 @@
 package main
 
 import (
-	"log"
+	"encoding/json"
+	"os"
 
 	"github.com/MuriloUnten/distributed-sales/common"
+	"github.com/charmbracelet/log"
 	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+var (
+	logger = log.New(os.Stdout)
 )
 
 func main() {
@@ -34,7 +40,10 @@ func main() {
 	}
 
 	queue, err := ch.QueueDeclare("", false, false, true, false, nil)
-	ch.QueueBind(queue.Name, "#", common.ExchangeName, false, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = ch.QueueBind(queue.Name, "#", common.LogsExchangeName, false, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -50,16 +59,6 @@ func main() {
 }
 
 func listen(messages <-chan amqp.Delivery) {
-	key, err := common.LoadPrivateKeyFromFile("./keys/private/private_key.pem")
-	if err != nil {
-		log.Fatal("cannot continue due to failure loading private key: ", err)
-	}
-
-	registeredPubKeys, err := common.LoadPublicKeysFromDirectory("./keys/public")
-	if err != nil {
-		log.Fatal("cannot continue due to failure loading public keys: ", err)
-	}
-
 	connection, err := amqp.Dial(common.Url)
 	if err != nil {
 		log.Fatal(err)
@@ -73,55 +72,29 @@ func listen(messages <-chan amqp.Delivery) {
 
 	defer ch.Close()
 	for msg := range messages {
-		log.Println("%s", msg.Body)
-		handleMessage(msg.Body, ch, key, registeredPubKeys)
+		handleMessage(&msg)
 	}
 }
 
-func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, registeredPubKeys []*rsa.PublicKey) {
-	signedMessage := new(common.SignedMessage)
-	err := json.Unmarshal(msg, signedMessage)
-	if err != nil {
-		// malformed message (just dropping it for now)
-		return
-	}
+func handleMessage(msg *amqp.Delivery) {
+		var logMsg common.LogMessage
+		err := json.Unmarshal(msg.Body, &logMsg)
+		if err != nil {
+			logger.Error("error parsing log message: ", err)
+			return
+		}
 
-	sale := new(common.SalePayload)
-	err = json.Unmarshal(signedMessage.Payload, sale)
-	if err != nil {
-		// malformed message (just dropping it for now)
-		return
-	}
+		switch msg.RoutingKey {
+		case common.InfoKey:
+			logger.Infof("[%s] (%s): %s\n", logMsg.Timestamp, logMsg.Sender, logMsg.Payload)
+		case common.WarningKey:
+			logger.Warnf("[%s] (%s): %s\n", logMsg.Timestamp, logMsg.Sender, logMsg.Payload)
+		case common.ErrorKey:
+			logger.Errorf("[%s] (%s): %s\n", logMsg.Timestamp, logMsg.Sender, logMsg.Payload)
+		case common.DebugKey:
+			logger.Debugf("[%s] (%s): %s\n", logMsg.Timestamp, logMsg.Sender, logMsg.Payload)
 
-	validated := common.ValidateSignature(signedMessage.Signature, signedMessage.Payload, registeredPubKeys)
-	if !validated {
-		// Silently dropping message that failed validation
-		return
-	}
-
-	hashed := sha256.Sum256(signedMessage.Payload)
-	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
-	if err != nil {
-		log.Println("dropping message due to failure signing: ", err)
-	}
-
-	outputMessage := common.SignedMessage{
-		Signature: string(signature),
-		Payload: signedMessage.Payload,
-	}
-
-	outputBytes, err := json.Marshal(outputMessage)
-	if err != nil {
-		log.Println("dropping message due to failure encoding output: ", err)
-	}
-
-	ch.Publish(
-		common.ExchangeName,
-		common.PublishedKey,
-		false,
-		false,
-		amqp.Publishing{
-			Body: outputBytes,
-		},
-	)
+		default:
+			logger.Error("received message with invalid type: ", msg.RoutingKey)
+		}
 }
