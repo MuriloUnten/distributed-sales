@@ -8,11 +8,12 @@ type SignedMessage struct {
 }
 
 type SalePayload struct {
-	Name     string `json:"name"`
+	Name string `json:"name"`
 }
 
 type VoteMessage struct {
 	Name     string `json:"name"`
+	// Note (Murilo): Positive was put here to allow a downvote in the future
 	Positive bool   `json:"positive"`
 }
 

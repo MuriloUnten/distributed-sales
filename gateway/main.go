@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 
 	"github.com/MuriloUnten/distributed-sales/common"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -18,92 +19,63 @@ const (
 	ActionCreate UiActionChoice = iota + 1
 	ActionList
 	ActionVote
+
+	PUBLISHED_SALES_INITIAL_CAPACITY = 10
 )
 
 var (
 	logger *common.DistributedLogger = nil
+	publishedSales []string = nil
+	privateKey *rsa.PrivateKey
 )
 
 func main() {
-	l, err := common.ConnectToLoggingService("gateway")
-	if err != nil {
-		log.Fatal("failed to connect to logging service")
-	}
-	logger = l
-	defer logger.Disconnect()
+	publishedSales = make([]string, 0, PUBLISHED_SALES_INITIAL_CAPACITY)
 
-	connection, err := amqp.Dial(common.Url)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer connection.Close()
-
-	ch, err := connection.Channel()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer ch.Close()
-
-	err = ch.ExchangeDeclare(
-		common.ExchangeName,
-		"topic",
-		false,
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	queue, err := ch.QueueDeclare("", false, false, true, false, nil)
-	if err != nil {
-
-		log.Fatal(err)
-	}
-
-	err = ch.QueueBind(queue.Name, common.ReceivedKey , common.ExchangeName, false, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	messages, err := ch.Consume(queue.Name, "", true, true, false, false, nil)
-
-	go listen(messages)
-
-	runUi()
-}
-
-func listen(messages <-chan amqp.Delivery) {
 	key, err := common.LoadPrivateKeyFromFile("./keys/private/private_key.pem")
+	privateKey = key
 	if err != nil {
 		log.Fatal("cannot continue due to failure loading private key: ", err)
 	}
+
+	listener, err := InitListener()
+	if err != nil {
+		log.Fatal("error starting listener: ", err)
+	}
+	defer listener.Deinit()
+
+	sender, err := InitSender()
+	if err != nil {
+		log.Fatal("error starting sender: ", err)
+	}
+	defer sender.Deinit()
+
+	logger, err := common.ConnectToLoggingService("gateway")
+	if err != nil {
+		log.Fatal("failed to connect to logging service")
+	}
+	defer logger.Disconnect()
+
+	messages, err := listener.ch.Consume(listener.queue.Name, "", true, true, false, false, nil)
+	go listen(messages)
+
+
+	runUi(sender)
+}
+
+func listen(messages <-chan amqp.Delivery) {
 
 	registeredPubKeys, err := common.LoadPublicKeysFromDirectory("./keys/public")
 	if err != nil {
 		log.Fatal("cannot continue due to failure loading public keys: ", err)
 	}
 
-	connection, err := amqp.Dial(common.Url)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer connection.Close()
-
-	ch, err := connection.Channel()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer ch.Close()
 	for msg := range messages {
-		handleMessage(msg.Body, ch, key, registeredPubKeys)
+		handleMessage(msg.Body, registeredPubKeys)
 	}
 }
 
-func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, registeredPubKeys []*rsa.PublicKey) {
+func handleMessage(msg []byte, registeredPubKeys []*rsa.PublicKey) {
 	signedMessage := new(common.SignedMessage)
 	err := json.Unmarshal(msg, signedMessage)
 	if err != nil {
@@ -124,56 +96,33 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 		return
 	}
 
-	hashed := sha256.Sum256(signedMessage.Payload)
-	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
-	if err != nil {
-		logger.Error("dropping message due to failure signing: " + err.Error())
+	alreadyExists := findSale(publishedSales, sale.Name)
+	if alreadyExists {
+		logger.Warn("Received published sale message for sale that already exists: " + sale.Name)
 		return
 	}
 
-	outputMessage := common.SignedMessage{
-		Signature: string(signature),
-		Payload: signedMessage.Payload,
-	}
-
-	outputBytes, err := json.Marshal(outputMessage)
-	if err != nil {
-		logger.Error("dropping message due to failure encoding output: " + err.Error())
-		return
-	}
-
-	err = ch.Publish(
-		common.ExchangeName,
-		common.PublishedKey,
-		false,
-		false,
-		amqp.Publishing{
-			Body: outputBytes,
-		},
-	)
-
-	if err != nil {
-		logger.Error("failed to publish sale: " + err.Error())
-	}
+	publishedSales = append(publishedSales, sale.Name)
 }
 
-func runUi() {
-	var invalid bool = false
+func runUi(sender *RabbitMQSender) {
+	first := true
 	for {
-		common.ClearTerminal()
-		if (invalid) {
-			fmt.Println("Invalid input. Please enter a valid option.")
-			invalid = false
+		if (!first) {
+			//TODO: wait for keystroke
 		}
+		first = false
+
+		common.ClearTerminal()
 		fmt.Println("Choose an action by entering its number")
-		fmt.Printf("%d. Create sale\n", ActionCreate)
+		fmt.Printf("%d. Create a sale\n", ActionCreate)
 		fmt.Printf("%d. List sales\n", ActionList)
 		fmt.Printf("%d. Vote for a sale\n", ActionVote)
 
 		var choice UiActionChoice
 		_, err := fmt.Scanf("%d", &choice)
 		if err != nil {
-			invalid = true
+			fmt.Println("You entered an invalid action.")
 			continue
 		}
 
@@ -181,52 +130,58 @@ func runUi() {
 		case ActionCreate:
 			var saleName string
 			common.ClearTerminal()
+			fmt.Println("---- Create a sale ----")
 			fmt.Printf("Enter the name of the sale you wish to create: ")
 			_, err := fmt.Scanf("%s", &saleName)
 			if err != nil {
-				invalid = true
+				fmt.Println("Error reading sale name.")
 				continue
 			}
-			createSale(saleName)
+
+			alreadyExists := findSale(publishedSales, saleName)
+			if alreadyExists {
+				fmt.Println("Failed to create sale. A sale with the same name already exists.")
+				continue
+			}
+			err = createSale(saleName, sender)
+			if err != nil {
+				fmt.Println("Error creating sale: ", err)
+				continue
+			}
 
 		case ActionList:
 			common.ClearTerminal()
-			sales, err := getSales()
-			if err != nil {
-				// TODO: this should somehow tell the user that the operation failed
-				continue
-			}
-
-			for i, s := range sales {
-				saleNumber := i + 1
-				fmt.Printf("%d. %s\n", saleNumber, s)
-			}
+			fmt.Println("---- List of sales ----")
+			// Here we can print the main slice directly,
+			// because there will be no subsequent writes
+			printSales(publishedSales)
+			continue
 
 		case ActionVote:
 			common.ClearTerminal()
-			sales, err := getSales()
+			fmt.Println("---- Vote for sale ----")
+			sales := getSales(publishedSales)
+			if len(sales) == 0 {
+				fmt.Println("There are no sales to vote to.")
+				continue
+			}
+			printSales(sales)
+
+			fmt.Printf("Enter the number of the sale you wish to vote to: ")
+			var vote int
+			_, err = fmt.Scanf("%d", &vote)
 			if err != nil {
-				// TODO: this should somehow tell the user that the operation failed
+				fmt.Println("Failed to read sale number.")
 				continue
 			}
 
-			for i, s := range sales {
-				saleNumber := i + 1
-				fmt.Printf("%d. %s\n", saleNumber, s)
-			}
-			fmt.Printf("Enter the name of the sale you wish to vote to: ")
-			var vote string
-			_, err = fmt.Scanf("%s", &vote)
-			if err != nil {
-				invalid = true
+			if vote < 0 || vote >= len(sales) {
+				fmt.Println("You entered an invalid sale number")
 				continue
 			}
-
-			err = voteForSale(vote)
+			err = voteForSale(sales, vote, sender)
 			if err != nil {
-				// TODO: here, the error can mean user entered invalid sale or some other error happened
-				invalid = true
-				continue
+				fmt.Println("Error sending vote message: ", err)
 			}
 
 		default:
@@ -235,22 +190,97 @@ func runUi() {
 	}
 }
 
-func createSale(name string) error {
-	// TODO: implement
-	return nil
+func createSale(name string, sender *RabbitMQSender) error {
+	payload := common.SalePayload{
+		Name: name,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	hashed := sha256.Sum256(payloadBytes)
+	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
+	signed := common.SignedMessage{
+		Signature: string(signature),
+		Payload: payloadBytes,
+	}
+	signedMsgBytes, err := json.Marshal(signed)
+	if err != nil {
+		return err
+	}
+
+	return sender.ch.Publish(
+		common.ExchangeName,
+		common.VoteKey,
+		false,
+		false,
+		amqp.Publishing{
+			Body: signedMsgBytes,
+		},
+	)
 }
 
-func getSales() ([]string, error) {
-	logger.Info("this is a test info log")
-	logger.Warn("this is a test info log")
-	logger.Error("this is a test info log")
-	logger.Debug("this is a test info log")
-	// TODO: implement
-	sales := make([]string, 0)
-	return sales, nil
+func printSales(sales []string) {
+	if len(sales) == 0 {
+		fmt.Println("")
+		return
+	}
+	for id, sale := range sales {
+		fmt.Printf("%d. %s\n", id, sale)
+	}
+	fmt.Println("")
 }
 
-func voteForSale(name string) error {
-	// TODO: implement
-	return nil
+/**
+  when you wish to use the published sales,
+  you must get a copy first in order to avoid concurrency problems in cases like voting
+*/
+func getSales(sales []string) []string {
+	return slices.Clone(sales)
+}
+
+func voteForSale(sales []string, number int, sender *RabbitMQSender) error {
+	// sanity check. This check guarantees the indexing won't cause a panic
+	if number < 0 || number >= len(sales) {
+		return fmt.Errorf("invalid sale number input")
+	}
+
+	chosenSale := sales[number]
+	payload := common.VoteMessage{
+		Name: chosenSale,
+		Positive: true,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	hashed := sha256.Sum256(payloadBytes)
+	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
+	signed := common.SignedMessage{
+		Signature: string(signature),
+		Payload: payloadBytes,
+	}
+	signedMsgBytes, err := json.Marshal(signed)
+	if err != nil {
+		return err
+	}
+
+	return sender.ch.Publish(
+		common.ExchangeName,
+		common.VoteKey,
+		false,
+		false,
+		amqp.Publishing{
+			Body: signedMsgBytes,
+		},
+	)
+}
+
+func findSale(sales []string, name string) bool {
+	for _, s := range publishedSales {
+		if s == name {
+			return true
+		}
+	}
+	return false
 }
