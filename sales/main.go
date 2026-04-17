@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 
@@ -92,8 +93,8 @@ func listen(messages <-chan amqp.Delivery) {
 
 	defer ch.Close()
 	for msg := range messages {
-		log.Println("%s", msg.Body)
 		handleMessage(msg.Body, ch, key, registeredPubKeys)
+		msg.Ack(false)
 	}
 }
 
@@ -126,7 +127,7 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 	}
 
 	outputMessage := common.SignedMessage{
-		Signature: string(signature),
+		Signature: base64.StdEncoding.EncodeToString(signature),
 		Payload: signedMessage.Payload,
 	}
 

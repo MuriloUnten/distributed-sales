@@ -73,6 +73,7 @@ func listen(messages <-chan amqp.Delivery) {
 	defer ch.Close()
 	for msg := range messages {
 		handleMessage(&msg)
+		msg.Ack(false)
 	}
 }
 

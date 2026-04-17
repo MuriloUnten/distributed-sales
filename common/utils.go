@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -97,7 +98,13 @@ func LoadPublicKeysFromDirectory(path string) ([]*rsa.PublicKey, error) {
  */
 func ValidateSignature(signature string, payload []byte, keys []*rsa.PublicKey) bool {
 	for _, key := range keys {
-		err := rsa.VerifyPKCS1v15(key, crypto.SHA256, payload, []byte(signature))
+		fmt.Println(key)
+		sig, err := base64.StdEncoding.DecodeString(signature)
+		if err != nil {
+			return false
+		}
+
+		err = rsa.VerifyPKCS1v15(key, crypto.SHA256, payload, sig)
 		if err != nil {
 			continue
 		}

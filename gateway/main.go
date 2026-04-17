@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -72,6 +73,7 @@ func listen(messages <-chan amqp.Delivery) {
 
 	for msg := range messages {
 		handleMessage(msg.Body, registeredPubKeys)
+		msg.Ack(false)
 	}
 }
 
@@ -109,7 +111,8 @@ func runUi(sender *RabbitMQSender) {
 	first := true
 	for {
 		if (!first) {
-			//TODO: wait for keystroke
+			fmt.Println("\nPress Enter to return...")
+			fmt.Scanln()
 		}
 		first = false
 
@@ -200,8 +203,9 @@ func createSale(name string, sender *RabbitMQSender) error {
 	}
 	hashed := sha256.Sum256(payloadBytes)
 	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
+	signatureString := base64.StdEncoding.EncodeToString(signature)
 	signed := common.SignedMessage{
-		Signature: string(signature),
+		Signature: signatureString,
 		Payload: payloadBytes,
 	}
 	signedMsgBytes, err := json.Marshal(signed)
@@ -211,7 +215,7 @@ func createSale(name string, sender *RabbitMQSender) error {
 
 	return sender.ch.Publish(
 		common.ExchangeName,
-		common.VoteKey,
+		common.ReceivedKey,
 		false,
 		false,
 		amqp.Publishing{
