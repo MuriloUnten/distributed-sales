@@ -7,6 +7,7 @@ const (
 	ReceivedKey  = "promocao.recebida"
 	PublishedKey = "promocao.publicada"
 	VoteKey      = "promocao.voto"
+	PopularKey   = "promocao.destaque"
 	
 	LogsExchangeName = "logs"
 	InfoKey          = "info"

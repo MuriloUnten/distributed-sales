@@ -98,11 +98,6 @@ func LoadPublicKeysFromDirectory(path string) ([]*rsa.PublicKey, error) {
  * SHA256 only
  */
 func ValidateSignature(signature string, payload []byte, keys []*rsa.PublicKey) bool {
-	fmt.Println("-----------validate-----------")
-	fmt.Println("signature: ", signature)
-	fmt.Println("payload: ", string(payload))
-	fmt.Println("------------------------------")
-
 	sig, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
 		return false
@@ -128,11 +123,6 @@ func Sign(priv *rsa.PrivateKey, hash crypto.Hash, payload []byte) (string, error
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(signature)
-	fmt.Println("-----------sign-----------")
-	fmt.Println("signature: ", encoded)
-	fmt.Println("payload: ", string(payload))
-	fmt.Println("--------------------------")
-
 	return encoded, err
 }
 
