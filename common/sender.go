@@ -1,14 +1,13 @@
-package main
+package common
 
 import (
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/MuriloUnten/distributed-sales/common"
 )
 
 
 type RabbitMQSender struct {
-	connection *amqp.Connection
-	ch *amqp.Channel
+	Connection *amqp.Connection
+	Ch *amqp.Channel
 }
 
 /**
@@ -16,7 +15,7 @@ type RabbitMQSender struct {
   by running RabbitMQListener.Deinit()
 */
 func InitSender() (*RabbitMQSender, error) {
-	connection, err := amqp.Dial(common.Url)
+	connection, err := amqp.Dial(Url)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +26,7 @@ func InitSender() (*RabbitMQSender, error) {
 	}
 
 	err = ch.ExchangeDeclare(
-		common.ExchangeName,
+		ExchangeName,
 		"topic",
 		false,
 		false,
@@ -40,12 +39,12 @@ func InitSender() (*RabbitMQSender, error) {
 	}
 
 	return &RabbitMQSender{
-		connection: connection,
-		ch: ch,
+		Connection: connection,
+		Ch: ch,
 	}, nil
 }
 
 func (s *RabbitMQSender) Deinit() {
-	s.ch.Close()
-	s.connection.Close()
+	s.Ch.Close()
+	s.Connection.Close()
 }

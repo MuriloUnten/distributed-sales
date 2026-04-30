@@ -1,22 +1,21 @@
-package main
+package common
 
 import (
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/MuriloUnten/distributed-sales/common"
 )
 
 type RabbitMQListener struct {
-	connection *amqp.Connection
-	ch *amqp.Channel
-	queue amqp.Queue
+	Connection *amqp.Connection
+	Ch *amqp.Channel
+	Queue amqp.Queue
 }
 
 /**
   the user is responsible for closing the sender
   by running RabbitMQListener.Deinit()
 */
-func InitListener() (*RabbitMQListener, error) {
-	connection, err := amqp.Dial(common.Url)
+func InitListener(routingKey string) (*RabbitMQListener, error) {
+	connection, err := amqp.Dial(Url)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +26,7 @@ func InitListener() (*RabbitMQListener, error) {
 	}
 
 	err = ch.ExchangeDeclare(
-		common.ExchangeName,
+		ExchangeName,
 		"topic",
 		false,
 		false,
@@ -44,20 +43,20 @@ func InitListener() (*RabbitMQListener, error) {
 		return nil, err
 	}
 
-	err = ch.QueueBind(queue.Name, common.PublishedKey , common.ExchangeName, false, nil)
+	err = ch.QueueBind(queue.Name, routingKey, ExchangeName, false, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	return &RabbitMQListener{
-		connection: connection,
-		ch: ch,
-		queue: queue,
+		Connection: connection,
+		Ch: ch,
+		Queue: queue,
 	}, nil
 }
 
 func (l *RabbitMQListener) Deinit() {
-	l.ch.Close()
-	l.connection.Close()
+	l.Ch.Close()
+	l.Connection.Close()
 }
 

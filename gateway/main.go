@@ -37,13 +37,13 @@ func main() {
 		log.Fatal("cannot continue due to failure loading private key: ", err)
 	}
 
-	listener, err := InitListener()
+	listener, err := common.InitListener(common.PublishedKey)
 	if err != nil {
 		log.Fatal("error starting listener: ", err)
 	}
 	defer listener.Deinit()
 
-	sender, err := InitSender()
+	sender, err := common.InitSender()
 	if err != nil {
 		log.Fatal("error starting sender: ", err)
 	}
@@ -55,7 +55,7 @@ func main() {
 	}
 	defer logger.Disconnect()
 
-	messages, err := listener.ch.Consume(listener.queue.Name, "", false, true, false, false, nil)
+	messages, err := listener.Ch.Consume(listener.Queue.Name, "", false, true, false, false, nil)
 	go listen(messages)
 
 
@@ -105,7 +105,7 @@ func handleMessage(msg []byte, registeredPubKeys []*rsa.PublicKey) {
 	publishedSales = append(publishedSales, sale.Name)
 }
 
-func runUi(sender *RabbitMQSender) {
+func runUi(sender *common.RabbitMQSender) {
 	first := true
 	for {
 		if (!first) {
@@ -191,7 +191,7 @@ func runUi(sender *RabbitMQSender) {
 	}
 }
 
-func createSale(name string, sender *RabbitMQSender) error {
+func createSale(name string, sender *common.RabbitMQSender) error {
 	payload := common.SalePayload{
 		Name: name,
 	}
@@ -209,7 +209,7 @@ func createSale(name string, sender *RabbitMQSender) error {
 		return err
 	}
 
-	return sender.ch.Publish(
+	return sender.Ch.Publish(
 		common.ExchangeName,
 		common.ReceivedKey,
 		false,
@@ -239,7 +239,7 @@ func getSales(sales []string) []string {
 	return slices.Clone(sales)
 }
 
-func voteForSale(sales []string, number int, sender *RabbitMQSender) error {
+func voteForSale(sales []string, number int, sender *common.RabbitMQSender) error {
 	// sanity check. This check guarantees the indexing won't cause a panic
 	if number < 0 || number >= len(sales) {
 		return fmt.Errorf("invalid sale number input")
@@ -264,7 +264,7 @@ func voteForSale(sales []string, number int, sender *RabbitMQSender) error {
 		return err
 	}
 
-	return sender.ch.Publish(
+	return sender.Ch.Publish(
 		common.ExchangeName,
 		common.VoteKey,
 		false,
