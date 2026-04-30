@@ -3,9 +3,8 @@ package main
 import (
 	"crypto"
 	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/MuriloUnten/distributed-sales/common"
@@ -17,7 +16,7 @@ var (
 )
 
 func main() {
-	l, err := common.ConnectToLoggingService("gateway")
+	l, err := common.ConnectToLoggingService("sales")
 	if err != nil {
 		log.Fatal("failed to connect to logging service")
 	}
@@ -59,7 +58,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	messages, err := ch.Consume(queue.Name, "", true, true, false, false, nil)
+	messages, err := ch.Consume(queue.Name, "", false, true, false, false, nil)
 
 	var forever chan struct{}
 
@@ -105,6 +104,7 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 		logger.Error("error decoding signed message: " + err.Error())
 		return
 	}
+	fmt.Println(signedMessage)
 
 	sale := new(common.SalePayload)
 	err = json.Unmarshal(signedMessage.Payload, sale)
@@ -119,15 +119,14 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 		return
 	}
 
-	hashed := sha256.Sum256(signedMessage.Payload)
-	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
+	signature, err := common.Sign(privateKey, crypto.SHA256, signedMessage.Payload)
 	if err != nil {
 		logger.Error("dropping message due to failure signing: " + err.Error())
 		return
 	}
 
 	outputMessage := common.SignedMessage{
-		Signature: base64.StdEncoding.EncodeToString(signature),
+		Signature: signature,
 		Payload: signedMessage.Payload,
 	}
 

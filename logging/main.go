@@ -48,7 +48,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	messages, err := ch.Consume(queue.Name, "", true, true, false, false, nil)
+	messages, err := ch.Consume(queue.Name, "", false, true, false, false, nil)
 
 	var forever chan struct{}
 

@@ -3,6 +3,7 @@ package common
 import (
 	"crypto"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -92,19 +93,24 @@ func LoadPublicKeysFromDirectory(path string) ([]*rsa.PublicKey, error) {
 	return keys, nil
 }
 
-/*
- Validates a signature based on a slice of possible public keys.
- SHA256 only
+/**
+ * Validates a signature based on a slice of possible public keys.
+ * SHA256 only
  */
 func ValidateSignature(signature string, payload []byte, keys []*rsa.PublicKey) bool {
-	for _, key := range keys {
-		fmt.Println(key)
-		sig, err := base64.StdEncoding.DecodeString(signature)
-		if err != nil {
-			return false
-		}
+	fmt.Println("-----------validate-----------")
+	fmt.Println("signature: ", signature)
+	fmt.Println("payload: ", string(payload))
+	fmt.Println("------------------------------")
 
-		err = rsa.VerifyPKCS1v15(key, crypto.SHA256, payload, sig)
+	sig, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+
+	hashed := sha256.Sum256(payload)
+	for _, key := range keys {
+		err := rsa.VerifyPKCS1v15(key, crypto.SHA256, hashed[:], sig)
 		if err != nil {
 			continue
 		}
@@ -112,6 +118,22 @@ func ValidateSignature(signature string, payload []byte, keys []*rsa.PublicKey) 
 	}
 
 	return false
+}
+
+func Sign(priv *rsa.PrivateKey, hash crypto.Hash, payload []byte) (string, error) {
+	hashed := sha256.Sum256(payload)
+	signature, err := rsa.SignPKCS1v15(nil, priv, crypto.SHA256, hashed[:])
+	if err != nil {
+		return "", err
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(signature)
+	fmt.Println("-----------sign-----------")
+	fmt.Println("signature: ", encoded)
+	fmt.Println("payload: ", string(payload))
+	fmt.Println("--------------------------")
+
+	return encoded, err
 }
 
 func getRelativeFilePath(directory string, fileName string) string {

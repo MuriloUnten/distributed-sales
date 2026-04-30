@@ -3,8 +3,6 @@ package main
 import (
 	"crypto"
 	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -57,7 +55,7 @@ func main() {
 	}
 	defer logger.Disconnect()
 
-	messages, err := listener.ch.Consume(listener.queue.Name, "", true, true, false, false, nil)
+	messages, err := listener.ch.Consume(listener.queue.Name, "", false, true, false, false, nil)
 	go listen(messages)
 
 
@@ -201,11 +199,9 @@ func createSale(name string, sender *RabbitMQSender) error {
 	if err != nil {
 		return err
 	}
-	hashed := sha256.Sum256(payloadBytes)
-	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
-	signatureString := base64.StdEncoding.EncodeToString(signature)
+	signature, err := common.Sign(privateKey, crypto.SHA256, payloadBytes)
 	signed := common.SignedMessage{
-		Signature: signatureString,
+		Signature: signature,
 		Payload: payloadBytes,
 	}
 	signedMsgBytes, err := json.Marshal(signed)
@@ -258,10 +254,9 @@ func voteForSale(sales []string, number int, sender *RabbitMQSender) error {
 	if err != nil {
 		return err
 	}
-	hashed := sha256.Sum256(payloadBytes)
-	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hashed[:])
+	signature, err := common.Sign(privateKey, crypto.SHA256, payloadBytes)
 	signed := common.SignedMessage{
-		Signature: string(signature),
+		Signature: signature,
 		Payload: payloadBytes,
 	}
 	signedMsgBytes, err := json.Marshal(signed)
