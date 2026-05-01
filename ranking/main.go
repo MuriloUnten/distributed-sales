@@ -44,7 +44,7 @@ func main() {
 	}
 	defer sender.Deinit()
 
-	logger, err := common.ConnectToLoggingService("gateway")
+	logger, err := common.ConnectToLoggingService("ranking")
 	if err != nil {
 		log.Fatal("failed to connect to logging service")
 	}

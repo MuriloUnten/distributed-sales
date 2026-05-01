@@ -104,7 +104,6 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 		logger.Error("error decoding signed message: " + err.Error())
 		return
 	}
-	fmt.Println(signedMessage)
 
 	sale := new(common.SalePayload)
 	err = json.Unmarshal(signedMessage.Payload, sale)
@@ -124,6 +123,8 @@ func handleMessage(msg []byte, ch *amqp.Channel, privateKey *rsa.PrivateKey, reg
 		logger.Error("dropping message due to failure signing: " + err.Error())
 		return
 	}
+
+	fmt.Printf("%+v\n", sale)
 
 	outputMessage := common.SignedMessage{
 		Signature: signature,
