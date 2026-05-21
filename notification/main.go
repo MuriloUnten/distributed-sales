@@ -125,7 +125,7 @@ func handleMessage(msg []byte, routingKey string, registeredPubKeys []*rsa.Publi
 
 	err = sender.Ch.Publish(
 		common.ExchangeName,
-		sale.Name,
+		"promocao." + sale.Name,
 		false,
 		false,
 		amqp.Publishing{

@@ -1,0 +1,4 @@
+github.com/MuriloUnten/distributed-sales/common v0.0.0-20260501003007-fdd5e67108a2 h1:TALgWowD8glYkFIpzfbjvC9sQPp0Na6YXok539QwzL4=
+github.com/MuriloUnten/distributed-sales/common v0.0.0-20260501003007-fdd5e67108a2/go.mod h1:ecZGJUVbjb4ZLzsgjwDaiY2HouDcbGRmMRGRlCsEWV0=
+github.com/rabbitmq/amqp091-go v1.10.0 h1:STpn5XsHlHGcecLmMFCtg7mqq0RnD+zFr4uzukfVhBw=
+github.com/rabbitmq/amqp091-go v1.10.0/go.mod h1:Hy4jKW5kQART1u+JkDTF9YYOQUHXqMuhrgxOEeS7G4o=
